@@ -1,0 +1,46 @@
+sudo nano /usr/local/bin/proxy-install
+sudo chmod +x /usr/local/bin/proxy-install
+
+
+sudo nano /usr/local/bin/ubuntu-lite-install
+sudo chmod +x /usr/local/bin/ubuntu-lite-install
+
+
+
+which mini-os-install
+sudo apt install -y xorriso
+
+
+// bắt đầu tạo phân vùng gắn kết
+
+sudo mkdir -p /mnt/rootfs /mnt/efi
+sudo mount /dev/sda2 /mnt/rootfs
+sudo mount /dev/sda1 /mnt/rootfs/boot/efi
+
+sudo mkdir -p /mnt/rootfs/EFI/boot
+### sudo cp -a /mnt/rootfs/boot/efi/EFI/ubuntu/. /mnt/rootfs/EFI/boot/
+sudo cp /mnt/rootfs/boot/efi/EFI/ubuntu/grubx64.efi /mnt/rootfs/EFI/boot/bootx64.efi
+
+sudo  ./bankup_iso.sh
+
+
+
+
+sudo apt install -y make build-essential 
+
+sudo apt install squashfs-tools
+
+
+sudo ln -sf /etc/systemd/system/proxyV4DN.service /etc/systemd/system/multi-user.target.wants/proxyV4DN.service
+
+
+sudo apt purge --auto-remove  plymouthd
+
+
+// gỡ những gói k cần thiết
+sudo apt purge --auto-remove cloud-init snapd avahi-daemon popularity-contest whoopsie popularity-contest ubuntu-release-upgrader-*
+
+// các ứng dụng đang bật nhưng k dùng
+sudo systemctl list-unit-files --state=enabled
+
+// fix lai sh file 

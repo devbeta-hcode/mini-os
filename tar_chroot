@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# đóng gói lại chroot
+sudo tar --numeric-owner -czf releases/minios-chroot.tar.gz -C build/chroot .
+
+# giải nén
+sudo tar --numeric-owner -xzf releases/minios-chroot.tar.gz -C /build/chroot
