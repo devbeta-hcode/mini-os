@@ -1,0 +1,70 @@
+#!/bin/bash
+# set -e
+
+# Yêu cầu quyền sudo nếu không phải root
+if [[ $EUID -ne 0 ]]; then
+   echo "⚠️  This script must be run as root (sudo)" 
+   exec sudo "$0" "$@"
+   exit 1
+fi
+
+CHROOT="build/chroot"
+echo "🧹 Đang dọn sạch chroot: $CHROOT"
+
+
+# Gỡ mount còn tồn tại
+echo "🔄 Gỡ tất cả mount trong $CHROOT nếu còn..."
+sudo mount | grep "$CHROOT" | awk '{print $3}' | sort -r | xargs -r sudo umount -lf
+
+# cập nhật lại dns
+cat > "$CHROOT/etc/resolv.conf" <<EOF
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+EOF
+
+# cập nhật lại host
+cat > "/etc/hosts" <<EOF
+127.0.0.1 localhost
+127.0.1.1 MiniOS
+EOF
+
+# Dọn dẹp các vùng không cần thiết
+sudo rm -rf $CHROOT/tmp/*
+sudo rm -rf $CHROOT/var/tmp/*
+sudo rm -rf $CHROOT/var/log/*
+sudo rm -rf $CHROOT/var/log/journal/*
+sudo rm -rf $CHROOT/var/cache/*
+sudo rm -rf $CHROOT/var/spool/*
+sudo rm -rf $CHROOT/var/mail/*
+sudo rm -rf $CHROOT/var/backups/*
+sudo rm -rf $CHROOT/var/opt/*
+sudo rm -rf $CHROOT/var/local/*
+sudo rm -rf $CHROOT/etc/cloud $CHROOT/var/lib/cloud $CHROOT/var/run/cloud-init
+sudo rm -rf $CHROOT/var/log/cloud-init*
+sudo rm -f $CHROOT/root/.bash_history
+sudo rm -f $CHROOT/home/*/.bash_history
+
+# Dọn PID/socket
+sudo find $CHROOT/var/lock -type f -delete
+sudo find $CHROOT/var/run -name '*.pid' -delete
+sudo find $CHROOT/var/run -name '*.lock' -delete
+
+# Tạo lại cấu trúc thư mục thiết yếu
+echo "🧱 Tạo lại cấu trúc /var tối thiểu..."
+sudo mkdir -p $CHROOT/var/{cache,lib,log,mail,opt,spool,tmp,local,backups}
+sudo mkdir -p $CHROOT/var/run
+sudo mkdir -p $CHROOT/var/lock
+sudo chmod 1777 $CHROOT/var/tmp
+sudo chmod 1777 $CHROOT/var/lock
+[ -L "$CHROOT/var/run" ] || sudo ln -sf /run $CHROOT/var/run
+[ -L "$CHROOT/var/lock" ] || sudo ln -sf /run/lock $CHROOT/var/lock
+
+# Cho dpkg và apt nếu cần
+sudo mkdir -p $CHROOT/var/lib/dpkg
+sudo mkdir -p $CHROOT/var/lib/apt/lists
+sudo mkdir -p $CHROOT/var/lib/systemd
+sudo mkdir -p $CHROOT/var/lib/landscape
+sudo touch $CHROOT/var/lib/dpkg/status
+sudo touch $CHROOT/var/lib/dpkg/available
+
+echo "✅ Dọn sạch và tái tạo chroot xong!"

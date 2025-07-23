@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Yêu cầu quyền sudo nếu không phải root
+if [[ $EUID -ne 0 ]]; then
+   echo "⚠️  This script must be run as root (sudo)" 
+   exec sudo "$0" "$@"
+   exit 1
+fi
+
+BUILD_DIR="build/rootfs"
+CHROOT="build/chroot"
+OUTPUT="releases/mini-os.iso"
+
+set -e
+
+rm -rf $BUILD_DIR
+mkdir $BUILD_DIR
+mkdir $BUILD_DIR/boot
+
+# Tạo rootfs
+bash clear_cache
+echo "🧱 File size: $(du -sh $CHROOT)"
+cp -a $CHROOT/* $BUILD_DIR
+
+# Copy kernel và initrd
+cp -a $CHROOT/boot/vmlinuz-6.8.0-64-generic $BUILD_DIR/boot/vmlinuz
+cp -a $CHROOT/boot/initrd.img-6.8.0-64-generic $BUILD_DIR/boot/initrd
+
+# update menu GRUB
+mkdir -p $BUILD_DIR/boot/grub
+cp -a config/grub_rootfs.cfg $BUILD_DIR/boot/grub/grub.cfg
+
+#Build ISO boot
+rm -rf $OUTPUT
+grub-mkrescue -o $OUTPUT $BUILD_DIR --modules="linux normal iso9660 memdisk search tar ls" --xorriso=/usr/bin/xorriso
+echo "✅ hoàn thành: $OUTPUT"
+

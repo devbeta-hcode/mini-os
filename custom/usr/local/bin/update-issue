@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# đợi kết nối mạng
+for i in {1..5}; do
+    IP=$(hostname -I | cut -d' ' -f1)
+    [ -n "$IP" ] && break
+    sleep 1
+done
+
+# Chạy landscape-sysinfo
+# /usr/bin/landscape-sysinfo > /var/lib/landscape/landscape-sysinfo.cache 2>/dev/null
+
+# Tạo nội dung mới cho /etc/issue
+{
+    echo ""
+    echo "Welcome to MiniOS [DEV BETA.,JSC (2025)]"
+    echo "IP Addr : $(hostname -I | cut -d' ' -f1)"
+    echo "Kernel  : \\r"
+    echo "TTY     : \\l"
+    echo ""
+    # cat /var/lib/landscape/landscape-sysinfo.cache 2>/dev/null
+    echo ""
+} > /etc/issue

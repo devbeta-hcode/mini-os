@@ -1,0 +1,7 @@
+#!/bin/bash
+
+CHROOT="build/chroot"
+MOD_DIR="custom"
+cp -a $MOD_DIR/* $CHROOT
+
+# mkdir -p $MOD_DIR/etc/systemd/network

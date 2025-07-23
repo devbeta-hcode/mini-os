@@ -1,0 +1,88 @@
+#!/bin/bash
+# noble	24.04 LTS	mới nhất (2024)
+# jammy	22.04 LTS	ổn định phổ biến
+# focal	20.04 LTS	lâu dài, ổn định
+# bionic	18.04 LTS	cũ
+
+sudo apt update
+sudo apt install mtools xorriso -y
+sudo apt install qemu-system
+sudo apt install debootstrap squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin
+sudo mkdir -p build/chroot
+# sudo chown -R hcode:hcode build/chroot # hcode:hcode = $USER:$USER
+# sudo chmod -R u+rw build/chroot
+sudo debootstrap --arch=amd64 noble build/chroot http://archive.ubuntu.com/ubuntu
+
+
+# vào chroot
+sudo rm -f build/chroot/etc/resolv.conf
+sudo cp /etc/resolv.conf build/chroot/etc/resolv.conf
+sudo mount -t proc proc build/chroot/proc
+sudo mount -t sysfs sys build/chroot/sys
+sudo mount --bind /dev build/chroot/dev
+sudo mkdir -p build/chroot/dev/pts
+sudo mount -t devpts devpts build/chroot/dev/pts
+
+# vào choot
+sudo chroot build/chroot
+export HOME=/root
+export LC_ALL=C
+
+# thực thi lệnh trong chroot k cần vào chroot
+sudo chroot build/chroot apt update
+
+# cập nhật cho live-boot trong chroot
+nano /etc/apt/sources.list
+
+    # Thay nội dung thành (cho Ubuntu 24.04 Noble):
+        deb http://archive.ubuntu.com/ubuntu noble main universe
+        deb http://archive.ubuntu.com/ubuntu noble-updates main universe
+        deb http://archive.ubuntu.com/ubuntu noble-security main universe
+        
+    # Nếu bạn dùng Ubuntu 22.04 (Jammy):
+        deb http://archive.ubuntu.com/ubuntu jammy main universe
+        deb http://archive.ubuntu.com/ubuntu jammy-updates main universe
+        deb http://archive.ubuntu.com/ubuntu jammy-security main universe
+
+# cài đặt cần thiết trong chroot
+apt update
+apt install -y lvm2 gdisk parted dosfstools rsync
+apt install -y live-boot live-boot-initramfs-tools live-tools live-config-systemd
+apt install -y grub-pc-bin grub-efi-amd64-bin grub-common
+apt install -y grub-efi grub-efi-amd64 grub-efi-amd64-signed shim-signed
+apt install -y net-tools openssh-server systemd-sysv nano
+apt install -y systemd-networkd systemd-resolved
+apt install -y linux-image-generic
+apt install -y locales
+locale-gen en_US.UTF-8
+update-locale LANG=en_US.UTF-8
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+# cài đặt mật khẩu root trong chroot
+echo "root:1234" | chpasswd
+
+# Tạo file cấu hình mạng tự động: trong chroot
+mkdir -p /etc/systemd/network
+cat <<EOF > /etc/systemd/network/20-wired.network
+[Match]
+Name=en*
+
+[Network]
+DHCP=yes
+EOF
+ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+systemctl enable systemd-networkd
+systemctl enable systemd-resolved
+
+# cập nhât trong chroot
+update-initramfs -u -k all
+
+# thoát chroot
+exit
+
+# gỡ mount
+sudo umount build/chroot/dev/pts
+sudo umount build/chroot/dev
+sudo umount build/chroot/sys
+sudo umount build/chroot/proc

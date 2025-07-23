@@ -1,0 +1,213 @@
+#!/bin/bash
+clear
+
+set -e
+
+TITLE="=== [Mini Os Installer] ==="
+MOUNT_DIR="/mnt/target"
+
+# Xác định danh sách thiết bị đang được hệ thống sử dụng (để loại trừ)
+USED_DEVICES=$(lsblk -no PKNAME $(findmnt -rn -o SOURCE | grep '^/dev/' | grep -v loop) 2>/dev/null | sort -u)
+
+echo "$TITLE"
+echo "Running from: /dev/$BOOT_DISK (excluded from targets)"
+
+# Step 1: Ch?n dia d�ch
+select_target_disk() {
+  echo "Detecting used devices (booted USB, running system)..."
+
+  # Lấy tất cả thiết bị (vd: /dev/sda) chứa các phân vùng đang mount (vd: /dev/sda1)
+  USED_DISKS=(
+    $(lsblk -nrpo NAME,TYPE,MOUNTPOINT | awk '$3 != "" && $2 == "part" {print $1}' | xargs -n1 lsblk -no PKNAME | sort -u)
+  )
+
+  echo "Available target disks:"
+  DISK_LIST=()
+  i=1
+
+  while read -r line; do
+    DEV=$(echo "$line" | awk '{print $1}')
+    MODEL=$(echo "$line" | cut -d' ' -f2-)
+
+    # Nếu thiết bị đang được sử dụng (mount), bỏ qua
+    if printf '%s\n' "${USED_DISKS[@]}" | grep -q "^$DEV$"; then
+      continue
+    fi
+
+    echo "  $i. /dev/$DEV - $MODEL"
+    DISK_LIST+=("/dev/$DEV")
+    ((i++))
+  done < <(lsblk -d -n -o NAME,MODEL | grep -v loop)
+
+  if [[ ${#DISK_LIST[@]} -eq 0 ]]; then
+    echo "❌ No suitable target disks found. All are in use."
+    exit 1
+  fi
+
+  read -p "Select target disk: " SELECT
+  TARGET_DISK=${DISK_LIST[$((SELECT-1))]}
+  if [[ -z "$TARGET_DISK" ]]; then
+    echo "Invalid selection."
+    exit 1
+  fi
+  echo "✅ Selected disk: $TARGET_DISK"
+}
+
+# Step 2: C?nh b�o
+confirm_danger() {
+  echo "ALL DATA ON $TARGET_DISK WILL BE ERASED!"
+  read -p "Type YES to continue [default YES]: " confirm
+  confirm=${confirm:-YES}
+  if [[ ! "$confirm" =~ ^(yes|YES|y|Y)$ ]]; then
+    echo "Cancelled."
+    exit 1
+  fi
+}
+
+# Step 3: Chu?n bdia (x�a, ph�n v�ng, format)
+prepare_disk() {
+  echo "Releasing $TARGET_DISK..."
+
+  swapoff -a 2>/dev/null || true
+
+  # Unmount all partitions on the target disk
+  for p in ${TARGET_DISK}?*; do
+    umount -lf "$p" 2>/dev/null || true
+  done
+
+  # Deactivate all LVM volumes safely
+  echo "Deactivating all LVM volumes..."
+  if command -v lvs &>/dev/null; then
+    for lv in $(lvs --noheadings -o lv_name,vg_name --separator / 2>/dev/null); do
+      lvchange -an "$lv" 2>/dev/null || true
+    done
+  fi
+  vgchange -an || true
+  dmsetup remove_all || true
+
+  partprobe "$TARGET_DISK" || true
+  udevadm settle
+  sleep 1
+
+  echo "Partitioning $TARGET_DISK..."
+  sgdisk --zap-all "$TARGET_DISK"
+  parted -s "$TARGET_DISK" mklabel gpt
+  parted -s "$TARGET_DISK" mkpart ESP fat32 1MiB 1025MiB
+  parted -s "$TARGET_DISK" set 1 esp on
+  parted -s "$TARGET_DISK" mkpart primary ext4 1025MiB 100%
+
+  sleep 2
+  udevadm settle
+
+  TARGET_EFI="${TARGET_DISK}1"
+  TARGET_ROOT="${TARGET_DISK}2"
+
+  echo "Creating EFI filesystem on $TARGET_EFI..."
+  mkfs.fat -F32 "$TARGET_EFI"
+
+  echo "Creating root filesystem on $TARGET_ROOT..."
+  mkfs.ext4 -F "$TARGET_ROOT"
+}
+
+# Step 4: Mount v� copy hth?ng
+copy_system() {
+
+  echo "Copying system..."
+
+  mkdir -p "$MOUNT_DIR"
+  mount "$TARGET_ROOT" "$MOUNT_DIR"
+  mkdir -p "$MOUNT_DIR/boot/efi"
+  mount "$TARGET_EFI" "$MOUNT_DIR/boot/efi"
+
+  rsync -aAXH --exclude={"/dev/*","/proc/*","/sys/*","/tmp/*","/run/*","/mnt/*","/media/*","/lost+found"} / "$MOUNT_DIR"
+
+  for dir in dev proc sys; do
+    mount --bind /$dir "$MOUNT_DIR/$dir"
+  done
+  
+  mount --bind /dev/pts "$MOUNT_DIR/dev/pts"
+
+  echo "Copying DNS config to chroot..."
+  rm -f "$MOUNT_DIR/etc/resolv.conf"
+  cp --dereference /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
+}
+
+# Step 5: chroot v� c?u h�nh GRUB + fstab + hostname
+finalize_system() {
+  echo "Finalizing system..."
+
+  UUID_ROOT=$(blkid -s UUID -o value "$TARGET_ROOT")
+  UUID_EFI=$(blkid -s UUID -o value "$TARGET_EFI")
+
+  cat > "$MOUNT_DIR/tmp/setup-chroot.sh" <<EOF
+#!/bin/bash
+set -e
+
+# Clean installer
+rm -rf /usr/local/bin/minios-install
+
+# Gỡ công cụ nếu không cần sau cài
+DEBIAN_FRONTEND=noninteractive apt purge -y --auto-remove lvm2 gdisk parted dosfstools rsync || true
+
+echo "Fixing sudo permissions..."
+
+chown root:root /etc/sudo.conf
+chown root:root /etc/sudoers
+chmod 440 /etc/sudoers
+
+if [ -d /etc/sudoers.d ]; then
+  chown root:root /etc/sudoers.d
+  chmod 755 /etc/sudoers.d
+
+  # Nếu có file trong đó thì xử lý tiếp
+  find /etc/sudoers.d -type f -exec chown root:root {} \;
+  find /etc/sudoers.d -type f -exec chmod 440 {} \;
+fi
+
+echo "Setting hostname..."
+echo "MiniOS" > /etc/hostname
+
+echo "Setting root password..."
+echo "root:1234" | chpasswd
+
+echo "Writing /etc/fstab..."
+cat > /etc/fstab <<FSTAB
+UUID=$UUID_ROOT / ext4 defaults 0 1
+UUID=$UUID_EFI  /boot/efi vfat umask=0077 0 1
+FSTAB
+
+echo "Installing GRUB and boot dependencies..."
+apt update
+DEBIAN_FRONTEND=noninteractive apt install -y grub-efi grub-efi-amd64 shim-signed efibootmgr os-prober
+
+echo "Installing GRUB bootloader to EFI..."
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=minios --recheck --no-floppy || {
+  echo "❌ GRUB install failed!"
+  exit 1
+}
+
+echo "Generating initrd and GRUB config..."
+update-initramfs -c -k all
+update-grub
+EOF
+
+  chmod +x "$MOUNT_DIR/tmp/setup-chroot.sh"
+  chroot "$MOUNT_DIR" /tmp/setup-chroot.sh
+  rm "$MOUNT_DIR/tmp/setup-chroot.sh"
+
+  echo "✅ Complete: system installed and bootable on $TARGET_DISK"
+  echo "🔌 Please REMOVE the installation USB BEFORE rebooting."
+  echo "💿 Unmounting system..."
+  umount -R "$MOUNT_DIR" || true
+  echo 3 > /proc/sys/vm/drop_caches || true
+  sync
+  echo "✅ System is ready to reboot or poweroff"
+}
+
+# === RUN ===
+select_target_disk
+confirm_danger
+prepare_disk
+copy_system
+finalize_system
+

@@ -1,0 +1,53 @@
+#!/bin/bash
+
+set -e
+
+# Yêu cầu quyền sudo nếu không phải root
+if [[ $EUID -ne 0 ]]; then
+   echo "⚠️  This script must be run as root (sudo)" 
+   exec sudo "$0" "$@"
+   exit 1
+fi
+
+BUILD_DIR="build/live_boot"
+CHROOT="build/chroot"
+OUTPUT="releases/mini-os.iso"
+
+
+# Gỡ mount còn tồn tại
+echo "🔄 Gỡ tất cả mount trong $CHROOT nếu còn..."
+sudo mount | grep "$CHROOT" | awk '{print $3}' | sort -r | xargs -r sudo umount -lf
+
+# tải những thứ sửa đổi vào chroot
+# bash start_mod
+
+#cập nhật lại dns
+cat > "$CHROOT/etc/resolv.conf" <<EOF
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+EOF
+
+rm -rf $BUILD_DIR
+mkdir -p $BUILD_DIR
+mkdir -p $BUILD_DIR/live
+
+# Copy kernel và initrd
+cp -a $CHROOT/boot/vmlinuz-6.8.0-64-generic $BUILD_DIR/live/vmlinuz
+cp -a $CHROOT/boot/initrd.img-6.8.0-64-generic $BUILD_DIR/live/initrd
+
+# update menu GRUB
+mkdir -p $BUILD_DIR/boot/grub
+cp -a config/grub_live_boot.cfg $BUILD_DIR/boot/grub/grub.cfg
+
+# pack squashfs
+# bash clear_cache
+echo "🧱 File size: $(du -sh $CHROOT)"
+rm -rf $BUILD_DIR/live/filesystem.squashfs
+mksquashfs $CHROOT $BUILD_DIR/live/filesystem.squashfs
+
+# Build ISO boot
+rm -rf $OUTPUT
+grub-mkrescue -o $OUTPUT $BUILD_DIR --modules="linux normal iso9660 memdisk search tar ls" --xorriso=/usr/bin/xorriso
+echo "✅ hoàn thành: $OUTPUT"
+
+
