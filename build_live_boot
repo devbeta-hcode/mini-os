@@ -13,7 +13,6 @@ BUILD_DIR="build/live_boot"
 CHROOT="build/chroot"
 OUTPUT="releases/mini-os.iso"
 
-
 # Gỡ mount còn tồn tại
 echo "🔄 Gỡ tất cả mount trong $CHROOT nếu còn..."
 sudo mount | grep "$CHROOT" | awk '{print $3}' | sort -r | xargs -r sudo umount -lf
@@ -41,13 +40,19 @@ cp -a config/grub_live_boot.cfg $BUILD_DIR/boot/grub/grub.cfg
 
 # pack squashfs
 # bash clear_cache
-echo "🧱 File size: $(du -sh $CHROOT)"
+echo "🔄 đang nén $BUILD_DIR"
+echo "🔄 Dung lượng: $(du -sh $CHROOT)"
 rm -rf $BUILD_DIR/live/filesystem.squashfs
 mksquashfs $CHROOT $BUILD_DIR/live/filesystem.squashfs
 
 # Build ISO boot
 rm -rf $OUTPUT
 grub-mkrescue -o $OUTPUT $BUILD_DIR --modules="linux normal iso9660 memdisk search tar ls" --xorriso=/usr/bin/xorriso
+
+# dọn dẹp
+echo "🔄 dọn dẹp thư mục $BUILD_DIR"
+rm -rf $BUILD_DIR
+
 echo "✅ hoàn thành: $OUTPUT"
 
 
