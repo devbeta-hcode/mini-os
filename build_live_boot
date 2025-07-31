@@ -18,7 +18,7 @@ echo "🔄 Gỡ tất cả mount trong $CHROOT nếu còn..."
 sudo mount | grep "$CHROOT" | awk '{print $3}' | sort -r | xargs -r sudo umount -lf
 
 # tải những thứ sửa đổi vào chroot
-# bash start_mod
+bash start_mod
 
 #cập nhật lại dns
 cat > "$CHROOT/etc/resolv.conf" <<EOF

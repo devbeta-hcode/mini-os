@@ -119,7 +119,7 @@ copy_system() {
   mkdir -p "$MOUNT_DIR/boot/efi"
   mount "$TARGET_EFI" "$MOUNT_DIR/boot/efi"
 
-  rsync -aAXH --exclude={"/dev/*","/proc/*","/sys/*","/tmp/*","/run/*","/mnt/*","/media/*","/lost+found"} / "$MOUNT_DIR"
+  rsync -aAXH --info=progress2 --exclude={"/dev/*","/proc/*","/sys/*","/tmp/*","/run/*","/mnt/*","/media/*","/lost+found"} / "$MOUNT_DIR"
 
   for dir in dev proc sys; do
     mount --bind /$dir "$MOUNT_DIR/$dir"
@@ -148,21 +148,6 @@ rm -rf /usr/local/bin/minios-install
 
 # Gỡ công cụ nếu không cần sau cài
 DEBIAN_FRONTEND=noninteractive apt purge -y --auto-remove lvm2 gdisk parted dosfstools rsync || true
-
-echo "Fixing sudo permissions..."
-
-chown root:root /etc/sudo.conf
-chown root:root /etc/sudoers
-chmod 440 /etc/sudoers
-
-if [ -d /etc/sudoers.d ]; then
-  chown root:root /etc/sudoers.d
-  chmod 755 /etc/sudoers.d
-
-  # Nếu có file trong đó thì xử lý tiếp
-  find /etc/sudoers.d -type f -exec chown root:root {} \;
-  find /etc/sudoers.d -type f -exec chmod 440 {} \;
-fi
 
 echo "Setting hostname..."
 echo "MiniOS" > /etc/hostname

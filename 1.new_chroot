@@ -5,8 +5,7 @@
 # bionic	18.04 LTS	cũ
 
 sudo apt update
-sudo apt install mtools xorriso -y
-sudo apt install qemu-system
+sudo apt install -y mtools xorriso qemu-system
 sudo apt install debootstrap squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin
 sudo mkdir -p build/chroot
 # sudo chown -R hcode:hcode build/chroot # hcode:hcode = $USER:$USER
